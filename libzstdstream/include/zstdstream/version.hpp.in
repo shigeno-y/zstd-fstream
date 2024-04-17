@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+
+#ifndef SHIGENOY_ZSTDSTREAM_VERSION_HPP_INCLUDED
+#define SHIGENOY_ZSTDSTREAM_VERSION_HPP_INCLUDED
+
+namespace shigenoy::zstdstream {
+constexpr const char* const commit_hash{ "@GIT_HASH@" };
+constexpr const char* const branch_name{ "@GIT_BRANCH@" };
+} // namespace hrdb::libgit2wrapper
+#endif
