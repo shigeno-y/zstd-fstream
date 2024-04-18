@@ -15,7 +15,6 @@ target_sources(
          include
          FILES
          include/zstdstream/zstdstream.hpp
-         include/zstdstream/DeflatingStream.hpp
   #
 )
 target_sources(
@@ -30,9 +29,7 @@ target_sources(
           internal_include/zstdstream/zstdstream_impl.hpp
   #
 )
-target_sources(${PROJECT_NAME} PRIVATE src/zstdstream.cpp
-                                       src/zstdstream_impl.cpp
-                                       src/DeflatingStream.cpp)
+target_sources(${PROJECT_NAME} PRIVATE src/zstdstream.cpp)
 
 target_include_directories(
   ${PROJECT_NAME}
