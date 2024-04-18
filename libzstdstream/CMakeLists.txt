@@ -15,6 +15,7 @@ target_sources(
          include
          FILES
          include/zstdstream/zstdstream.hpp
+         include/zstdstream/DeflatingStream.hpp
   #
 )
 target_sources(
@@ -30,7 +31,8 @@ target_sources(
   #
 )
 target_sources(${PROJECT_NAME} PRIVATE src/zstdstream.cpp
-                                       src/zstdstream_impl.cpp)
+                                       src/zstdstream_impl.cpp
+                                       src/DeflatingStream.cpp)
 
 target_include_directories(
   ${PROJECT_NAME}
@@ -49,6 +51,9 @@ set_target_properties(${PROJECT_NAME} PROPERTIES CMAKE_CXX_STANDARD_REQUIRED ON
 
 find_package(zstd REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE zstd::libzstd_static)
+
+find_package(Poco REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE Poco::Poco)
 
 if(MSVC)
   get_target_property(_s ${PROJECT_NAME} HEADER_SET_HEADERS)

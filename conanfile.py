@@ -59,6 +59,40 @@ class zstdstreamConan(ConanFile):
 
     def requirements(self):
         self.requires("zstd/[^1.5]")
+        self.requires("poco/[^1.13]")
+
+    def configure(self):
+        self.options["poco"].shared = self.options.shared
+        self.options["poco"].enable_active_record = False
+        self.options["poco"].log_debug = False
+        self.options["poco"].with_sql_parser = False
+        self.options["poco"].enable_apacheconnector = False
+        self.options["poco"].enable_cppparser = False
+        self.options["poco"].enable_crypto = False
+        self.options["poco"].enable_data = False
+        self.options["poco"].enable_data_mysql = False
+        self.options["poco"].enable_data_odbc = False
+        self.options["poco"].enable_data_postgresql = False
+        self.options["poco"].enable_data_sqlite = False
+        self.options["poco"].enable_encodings = False
+        self.options["poco"].enable_json = False
+        self.options["poco"].enable_jwt = False
+        self.options["poco"].enable_mongodb = False
+        self.options["poco"].enable_net = False
+        self.options["poco"].enable_netssl = False
+        self.options["poco"].enable_netssl_win = False
+        self.options["poco"].enable_pdf = False
+        self.options["poco"].enable_pagecompiler = False
+        self.options["poco"].enable_pagecompiler_file2page = False
+        self.options["poco"].enable_pocodoc = False
+        self.options["poco"].enable_redis = False
+        self.options["poco"].enable_sevenzip = False
+        self.options["poco"].enable_util = False
+        self.options["poco"].enable_xml = False
+        self.options["poco"].enable_zip = False
+        self.options["poco"].enable_activerecord = False
+        self.options["poco"].enable_activerecord_compiler = False
+        self.options["poco"].enable_prometheus = False
 
     def generate(self):
         # tc = CMakeToolchain(self, generator="Ninja")
