@@ -1,201 +1,183 @@
 //
-// DeflatingStream.h
-//
-// Library: Foundation
-// Package: Streams
-// Module:  ZLibStream
-//
-// Definition of the DeflatingStream class.
-//
-// Copyright (c) 2004-2006, Applied Informatics Software Engineering GmbH.
-// and Contributors.
-//
 // SPDX-License-Identifier:	BSL-1.0
 //
 
+/*
+ * Base works are from POCO version 1.13.3.
+ */
 
-#ifndef Foundation_DeflatingStream_INCLUDED
-#define Foundation_DeflatingStream_INCLUDED
+#ifndef SHIGENOY_ZSTDSTREAM_HPP_INCLUDED
+#define SHIGENOY_ZSTDSTREAM_HPP_INCLUDED
 
+#include "zstd.h"
 
-#include "Poco/Foundation.h"
 #include "Poco/BufferedStreamBuf.h"
+#include "Poco/Foundation.h"
+
 #include <istream>
+#include <memory>
 #include <ostream>
-#if defined(POCO_UNBUNDLED)
-#include <zlib.h>
-#else
-#include "Poco/zlib.h"
-#endif
+#include <vector>
 
-
-namespace Poco {
-
-
-class Foundation_API DeflatingStreamBuf: public BufferedStreamBuf
-	/// This is the streambuf class used by DeflatingInputStream and DeflatingOutputStream.
-	/// The actual work is delegated to zlib (see http://zlib.net).
-	/// Both zlib (deflate) streams and gzip streams are supported.
-	/// Output streams should always call close() to ensure
-	/// proper completion of compression.
-	/// A compression level (0 to 9) can be specified in the constructor.
+namespace shigenoy::zstdstream {
+class ZSTDCContextFreener
 {
 public:
-	enum StreamType
-	{
-		STREAM_ZLIB, /// Create a zlib header, use Adler-32 checksum.
-		STREAM_GZIP  /// Create a gzip header, use CRC-32 checksum.
-	};
+    void operator()(ZSTD_CCtx* ctx) { ZSTD_freeCCtx(ctx); };
+};
 
-	DeflatingStreamBuf(std::istream& istr, StreamType type, int level);
-		/// Creates a DeflatingStreamBuf for compressing data read
-		/// from the given input stream.
+class ZSTDDContextFreener
+{
+public:
+    void operator()(ZSTD_DCtx* ctx) { ZSTD_freeDCtx(ctx); };
+};
 
-	DeflatingStreamBuf(std::istream& istr, int windowBits, int level);
-		/// Creates a DeflatingStreamBuf for compressing data read
-		/// from the given input stream.
-		///
-		/// Please refer to the zlib documentation of deflateInit2() for a description
-		/// of the windowBits parameter.
-
-	DeflatingStreamBuf(std::ostream& ostr, StreamType type, int level);
-		/// Creates a DeflatingStreamBuf for compressing data passed
-		/// through and forwarding it to the given output stream.
-
-	DeflatingStreamBuf(std::ostream& ostr, int windowBits, int level);
-		/// Creates a DeflatingStreamBuf for compressing data passed
-		/// through and forwarding it to the given output stream.
-		///
-		/// Please refer to the zlib documentation of deflateInit2() for a description
-		/// of the windowBits parameter.
-
-	~DeflatingStreamBuf();
-		/// Destroys the DeflatingStreamBuf.
-
-	int close();
-		/// Finishes up the stream.
-		///
-		/// Must be called when deflating to an output stream.
-
-protected:
-	int readFromDevice(char* buffer, std::streamsize length);
-	int writeToDevice(const char* buffer, std::streamsize length);
-	virtual int sync();
-
+class Foundation_API ZstdStreamBuf : public Poco::BufferedStreamBuf
+{
 private:
-	enum
-	{
-		STREAM_BUFFER_SIZE  = 1024,
-		DEFLATE_BUFFER_SIZE = 32768
-	};
+    const size_t PRE_PROCESS_BUFFER_SIZE;
+    const size_t POST_PROCESSED_BUFFER_SIZE;
 
-	std::istream* _pIstr;
-	std::ostream* _pOstr;
-	char*    _buffer;
-	z_stream _zstr;
-	bool     _eof;
-};
+    std::vector<char> pre_buffer_;
+    std::vector<char> post_buffer_;
+    std::istream* pIstr_{ nullptr };
+    std::ostream* pOstr_{ nullptr };
+    bool eof_{ false };
+    std::unique_ptr<ZSTD_CCtx, ZSTDCContextFreener> cctx_{ nullptr };
+    std::unique_ptr<ZSTD_DCtx, ZSTDDContextFreener> dctx_{ nullptr };
 
-
-class Foundation_API DeflatingIOS: public virtual std::ios
-	/// The base class for DeflatingOutputStream and DeflatingInputStream.
-	///
-	/// This class is needed to ensure the correct initialization
-	/// order of the stream buffer and base classes.
-{
 public:
-	DeflatingIOS(std::ostream& ostr, DeflatingStreamBuf::StreamType type = DeflatingStreamBuf::STREAM_ZLIB, int level = Z_DEFAULT_COMPRESSION);
-		/// Creates a DeflatingIOS for compressing data passed
-		/// through and forwarding it to the given output stream.
+    ZstdStreamBuf(std::istream& istr);
+    /// Creates a DeflatingStreamBuf for compressing data read
+    /// from the given input stream.
 
-	DeflatingIOS(std::ostream& ostr, int windowBits, int level);
-		/// Creates a DeflatingIOS for compressing data passed
-		/// through and forwarding it to the given output stream.
-		///
-		/// Please refer to the zlib documentation of deflateInit2() for a description
-		/// of the windowBits parameter.
+    ZstdStreamBuf(std::istream& istr, int windowBits);
+    /// Creates a DeflatingStreamBuf for compressing data read
+    /// from the given input stream.
+    ///
+    /// Please refer to the zlib documentation of deflateInit2() for a description
+    /// of the windowBits parameter.
 
-	DeflatingIOS(std::istream& istr, DeflatingStreamBuf::StreamType type = DeflatingStreamBuf::STREAM_ZLIB, int level = Z_DEFAULT_COMPRESSION);
-		/// Creates a DeflatingIOS for compressing data read
-		/// from the given input stream.
+    ZstdStreamBuf(std::ostream& ostr, int level);
+    /// Creates a DeflatingStreamBuf for compressing data passed
+    /// through and forwarding it to the given output stream.
 
-	DeflatingIOS(std::istream& istr, int windowBits, int level);
-		/// Creates a DeflatingIOS for compressing data read
-		/// from the given input stream.
-		///
-		/// Please refer to the zlib documentation of deflateInit2() for a description
-		/// of the windowBits parameter.
+    ZstdStreamBuf(std::ostream& ostr, int windowBits, int level);
+    /// Creates a DeflatingStreamBuf for compressing data passed
+    /// through and forwarding it to the given output stream.
+    ///
+    /// Please refer to the zlib documentation of deflateInit2() for a description
+    /// of the windowBits parameter.
 
-	~DeflatingIOS();
-		/// Destroys the DeflatingIOS.
+    ~ZstdStreamBuf();
+    /// Destroys the DeflatingStreamBuf.
 
-	DeflatingStreamBuf* rdbuf();
-		/// Returns a pointer to the underlying stream buffer.
+    int close();
+    /// Finishes up the stream.
+    ///
+    /// Must be called when deflating to an output stream.
 
 protected:
-	DeflatingStreamBuf _buf;
+    int readFromDevice(char* buffer, std::streamsize length);
+    int writeToDevice(const char* buffer, std::streamsize length);
+    virtual int sync();
 };
 
+class Foundation_API ZstdIOS : public virtual std::ios
+/// The base class for ZstdOutputStream and DeflatingInputStream.
+///
+/// This class is needed to ensure the correct initialization
+/// order of the stream buffer and base classes.
+{
+protected:
+    ZstdStreamBuf buf_;
 
-class Foundation_API DeflatingOutputStream: public std::ostream, public DeflatingIOS
-	/// This stream compresses all data passing through it
-	/// using zlib's deflate algorithm.
-	/// After all data has been written to the stream, close()
-	/// must be called to ensure completion of compression.
-	/// Example:
-	///     std::ofstream ostr("data.gz", std::ios::binary);
-	///     DeflatingOutputStream deflater(ostr, DeflatingStreamBuf::STREAM_GZIP);
-	///     deflater << "Hello, world!" << std::endl;
-	///     deflater.close();
-	///     ostr.close();
+public:
+    ZstdIOS(std::ostream& ostr, int level);
+    /// Creates a ZstdIOS for compressing data passed
+    /// through and forwarding it to the given output stream.
+
+    ZstdIOS(std::ostream& ostr, int windowBits, int level);
+    /// Creates a ZstdIOS for compressing data passed
+    /// through and forwarding it to the given output stream.
+    ///
+    /// Please refer to the zlib documentation of deflateInit2() for a description
+    /// of the windowBits parameter.
+
+    ZstdIOS(std::istream& istr);
+    /// Creates a ZstdIOS for compressing data read
+    /// from the given input stream.
+
+    ZstdIOS(std::istream& istr, int windowBits);
+    /// Creates a ZstdIOS for compressing data read
+    /// from the given input stream.
+    ///
+    /// Please refer to the zlib documentation of deflateInit2() for a description
+    /// of the windowBits parameter.
+
+    ~ZstdIOS();
+    /// Destroys the ZstdIOS.
+
+    ZstdStreamBuf* rdbuf();
+    /// Returns a pointer to the underlying stream buffer.
+};
+
+class Foundation_API ZstdOutputStream : public std::ostream, public ZstdIOS
+/// This stream compresses all data passing through it
+/// using zlib's deflate algorithm.
+/// After all data has been written to the stream, close()
+/// must be called to ensure completion of compression.
+/// Example:
+///     std::ofstream ostr("data.gz", std::ios::binary);
+///     ZstdOutputStream deflater(ostr, DeflatingStreamBuf::STREAM_GZIP);
+///     deflater << "Hello, world!" << std::endl;
+///     deflater.close();
+///     ostr.close();
 {
 public:
-	DeflatingOutputStream(std::ostream& ostr, DeflatingStreamBuf::StreamType type = DeflatingStreamBuf::STREAM_ZLIB, int level = Z_DEFAULT_COMPRESSION);
-		/// Creates a DeflatingOutputStream for compressing data passed
-		/// through and forwarding it to the given output stream.
+    ZstdOutputStream(std::ostream& ostr, int level);
+    /// Creates a ZstdOutputStream for compressing data passed
+    /// through and forwarding it to the given output stream.
 
-	DeflatingOutputStream(std::ostream& ostr, int windowBits, int level);
-		/// Creates a DeflatingOutputStream for compressing data passed
-		/// through and forwarding it to the given output stream.
-		///
-		/// Please refer to the zlib documentation of deflateInit2() for a description
-		/// of the windowBits parameter.
+    ZstdOutputStream(std::ostream& ostr, int windowBits, int level);
+    /// Creates a ZstdOutputStream for compressing data passed
+    /// through and forwarding it to the given output stream.
+    ///
+    /// Please refer to the zlib documentation of deflateInit2() for a description
+    /// of the windowBits parameter.
 
-	~DeflatingOutputStream();
-		/// Destroys the DeflatingOutputStream.
+    ~ZstdOutputStream();
+    /// Destroys the ZstdOutputStream.
 
-	int close();
-		/// Finishes up the stream.
-		///
-		/// Must be called when deflating to an output stream.
+    int close();
+    /// Finishes up the stream.
+    ///
+    /// Must be called when deflating to an output stream.
 
 protected:
-	virtual int sync();
+    virtual int sync();
 };
 
-
-class Foundation_API DeflatingInputStream: public std::istream, public DeflatingIOS
-	/// This stream compresses all data passing through it
-	/// using zlib's deflate algorithm.
+class Foundation_API ZstdInputStream : public std::istream, public ZstdIOS
+/// This stream compresses all data passing through it
+/// using zlib's deflate algorithm.
 {
 public:
-	DeflatingInputStream(std::istream& istr, DeflatingStreamBuf::StreamType type = DeflatingStreamBuf::STREAM_ZLIB, int level = Z_DEFAULT_COMPRESSION);
-		/// Creates a DeflatingIOS for compressing data read
-		/// from the given input stream.
+    ZstdInputStream(std::istream& istr);
+    /// Creates a DeflatingIOS for compressing data read
+    /// from the given input stream.
 
-	DeflatingInputStream(std::istream& istr, int windowBits, int level);
-		/// Creates a DeflatingIOS for compressing data read
-		/// from the given input stream.
-		///
-		/// Please refer to the zlib documentation of deflateInit2() for a description
-		/// of the windowBits parameter.
+    ZstdInputStream(std::istream& istr, int windowBits);
+    /// Creates a DeflatingIOS for compressing data read
+    /// from the given input stream.
+    ///
+    /// Please refer to the zlib documentation of deflateInit2() for a description
+    /// of the windowBits parameter.
 
-	~DeflatingInputStream();
-		/// Destroys the DeflatingInputStream.
+    ~ZstdInputStream();
+    /// Destroys the DeflatingInputStream.
 };
 
-
-} // namespace Poco
-
+} // namespace shigenoy::zstdstream
 
 #endif // Foundation_DeflatingStream_INCLUDED

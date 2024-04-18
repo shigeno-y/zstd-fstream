@@ -24,7 +24,9 @@ add_compile_options(
   "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>"
   "$<$<C_COMPILER_ID:MSVC>:/permissive->"
   "$<$<CXX_COMPILER_ID:MSVC>:/permissive->")
+
 add_subdirectory(libzstdstream)
+add_subdirectory(test)
 
 include(cmake/utils.cmake)
 get_all_targets(targets ${CMAKE_CURRENT_SOURCE_DIR})

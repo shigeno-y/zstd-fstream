@@ -47,10 +47,10 @@ set_target_properties(${PROJECT_NAME} PROPERTIES CMAKE_CXX_STANDARD_REQUIRED ON
                                                  CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(zstd REQUIRED)
-target_link_libraries(${PROJECT_NAME} PRIVATE zstd::libzstd_static)
+target_link_libraries(${PROJECT_NAME} PUBLIC zstd::libzstd_static)
 
 find_package(Poco REQUIRED)
-target_link_libraries(${PROJECT_NAME} PRIVATE Poco::Poco)
+target_link_libraries(${PROJECT_NAME} PUBLIC Poco::Poco)
 
 if(MSVC)
   get_target_property(_s ${PROJECT_NAME} HEADER_SET_HEADERS)

@@ -11,380 +11,214 @@
 // SPDX-License-Identifier:	BSL-1.0
 //
 
+#include "zstdstream/zstdstream.hpp"
 
-#include "Poco/DeflatingStream.h"
 #include "Poco/Exception.h"
 
+#include <cstring>
+#include <iterator>
 
-namespace Poco {
-
-
-DeflatingStreamBuf::DeflatingStreamBuf(std::istream& istr, StreamType type, int level):
-	BufferedStreamBuf(STREAM_BUFFER_SIZE, std::ios::in),
-	_pIstr(&istr),
-	_pOstr(0),
-	_eof(false)
-{
-	_zstr.next_in   = 0;
-	_zstr.avail_in  = 0;
-	_zstr.total_in  = 0;
-	_zstr.next_out  = 0;
-	_zstr.avail_out = 0;
-	_zstr.total_out = 0;
-	_zstr.msg       = 0;
-	_zstr.state     = 0;
-	_zstr.zalloc    = Z_NULL;
-	_zstr.zfree     = Z_NULL;
-	_zstr.opaque    = Z_NULL;
-	_zstr.data_type = 0;
-	_zstr.adler     = 0;
-	_zstr.reserved  = 0;
-
-	_buffer = new char[DEFLATE_BUFFER_SIZE];
-
-	int rc = deflateInit2(&_zstr, level, Z_DEFLATED, 15 + (type == STREAM_GZIP ? 16 : 0), 8, Z_DEFAULT_STRATEGY);
-	if (rc != Z_OK)
-	{
-		delete [] _buffer;
-		throw IOException(zError(rc));
-	}
-}
-
-
-DeflatingStreamBuf::DeflatingStreamBuf(std::istream& istr, int windowBits, int level):
-	BufferedStreamBuf(STREAM_BUFFER_SIZE, std::ios::in),
-	_pIstr(&istr),
-	_pOstr(0),
-	_eof(false)
-{
-	_zstr.zalloc    = Z_NULL;
-	_zstr.zfree     = Z_NULL;
-	_zstr.opaque    = Z_NULL;
-	_zstr.next_in   = 0;
-	_zstr.avail_in  = 0;
-	_zstr.next_out  = 0;
-	_zstr.avail_out = 0;
-
-	_buffer = new char[DEFLATE_BUFFER_SIZE];
-
-	int rc = deflateInit2(&_zstr, level, Z_DEFLATED, windowBits, 8, Z_DEFAULT_STRATEGY);
-	if (rc != Z_OK)
-	{
-		delete [] _buffer;
-		throw IOException(zError(rc));
-	}
-}
-
-
-DeflatingStreamBuf::DeflatingStreamBuf(std::ostream& ostr, StreamType type, int level):
-	BufferedStreamBuf(STREAM_BUFFER_SIZE, std::ios::out),
-	_pIstr(0),
-	_pOstr(&ostr),
-	_eof(false)
-{
-	_zstr.zalloc    = Z_NULL;
-	_zstr.zfree     = Z_NULL;
-	_zstr.opaque    = Z_NULL;
-	_zstr.next_in   = 0;
-	_zstr.avail_in  = 0;
-	_zstr.next_out  = 0;
-	_zstr.avail_out = 0;
-
-	_buffer = new char[DEFLATE_BUFFER_SIZE];
-
-	int rc = deflateInit2(&_zstr, level, Z_DEFLATED, 15 + (type == STREAM_GZIP ? 16 : 0), 8, Z_DEFAULT_STRATEGY);
-	if (rc != Z_OK)
-	{
-		delete [] _buffer;
-		throw IOException(zError(rc));
-	}
-}
-
-
-DeflatingStreamBuf::DeflatingStreamBuf(std::ostream& ostr, int windowBits, int level):
-	BufferedStreamBuf(STREAM_BUFFER_SIZE, std::ios::out),
-	_pIstr(0),
-	_pOstr(&ostr),
-	_eof(false)
-{
-	_zstr.zalloc    = Z_NULL;
-	_zstr.zfree     = Z_NULL;
-	_zstr.opaque    = Z_NULL;
-	_zstr.next_in   = 0;
-	_zstr.avail_in  = 0;
-	_zstr.next_out  = 0;
-	_zstr.avail_out = 0;
-
-	_buffer = new char[DEFLATE_BUFFER_SIZE];
-
-	int rc = deflateInit2(&_zstr, level, Z_DEFLATED, windowBits, 8, Z_DEFAULT_STRATEGY);
-	if (rc != Z_OK)
-	{
-		delete [] _buffer;
-		throw IOException(zError(rc));
-	}
-}
-
-
-DeflatingStreamBuf::~DeflatingStreamBuf()
-{
-	try
-	{
-		close();
-	}
-	catch (...)
-	{
-	}
-	delete [] _buffer;
-	deflateEnd(&_zstr);
-}
-
-
-int DeflatingStreamBuf::close()
-{
-	BufferedStreamBuf::sync();
-	_pIstr = 0;
-	if (_pOstr)
-	{
-		if (_zstr.next_out)
-		{
-			int rc = deflate(&_zstr, Z_FINISH);
-			if (rc != Z_OK && rc != Z_STREAM_END) throw IOException(zError(rc));
-			_pOstr->write(_buffer, DEFLATE_BUFFER_SIZE - _zstr.avail_out);
-			if (!_pOstr->good()) throw IOException("Failed writing deflated data to output stream");
-			_zstr.next_out  = (unsigned char*) _buffer;
-			_zstr.avail_out = DEFLATE_BUFFER_SIZE;
-			while (rc != Z_STREAM_END)
-			{
-				rc = deflate(&_zstr, Z_FINISH);
-				if (rc != Z_OK && rc != Z_STREAM_END) throw IOException(zError(rc));
-				_pOstr->write(_buffer, DEFLATE_BUFFER_SIZE - _zstr.avail_out);
-				if (!_pOstr->good()) throw IOException("Failed writing deflated data to output stream");
-				_zstr.next_out  = (unsigned char*) _buffer;
-				_zstr.avail_out = DEFLATE_BUFFER_SIZE;
-			}
-		}
-		_pOstr->flush();
-		_pOstr = 0;
-	}
-	return 0;
-}
-
-
-int DeflatingStreamBuf::sync()
-{
-	if (BufferedStreamBuf::sync())
-		return -1;
-
-	if (_pOstr)
-	{
-		if (_zstr.next_out)
-		{
-			int rc = deflate(&_zstr, Z_SYNC_FLUSH);
-			if (rc != Z_OK) throw IOException(zError(rc));
-			_pOstr->write(_buffer, DEFLATE_BUFFER_SIZE - _zstr.avail_out);
-			if (!_pOstr->good()) throw IOException("Failed writing deflated data to output stream");
-			while (_zstr.avail_out == 0)
-			{
-				_zstr.next_out  = (unsigned char*) _buffer;
-				_zstr.avail_out = DEFLATE_BUFFER_SIZE;
-				rc = deflate(&_zstr, Z_SYNC_FLUSH);
-				if (rc != Z_OK) throw IOException(zError(rc));
-				_pOstr->write(_buffer, DEFLATE_BUFFER_SIZE - _zstr.avail_out);
-				if (!_pOstr->good()) throw IOException("Failed writing deflated data to output stream");
-			};
-			_zstr.next_out  = (unsigned char*) _buffer;
-			_zstr.avail_out = DEFLATE_BUFFER_SIZE;
-		}
-		// NOTE: This breaks the Zip library and causes corruption in some files.
-		// See GH #1828
-		// _pOstr->flush();
-	}
-	return 0;
-}
-
-
-int DeflatingStreamBuf::readFromDevice(char* buffer, std::streamsize length)
-{
-	if (!_pIstr) return 0;
-	if (_zstr.avail_in == 0 && !_eof)
-	{
-		int n = 0;
-		if (_pIstr->good())
-		{
-			_pIstr->read(_buffer, DEFLATE_BUFFER_SIZE);
-			n = static_cast<int>(_pIstr->gcount());
-		}
-		if (n > 0)
-		{
-			_zstr.next_in  = (unsigned char*) _buffer;
-			_zstr.avail_in = n;
-		}
-		else
-		{
-			_zstr.next_in  = 0;
-			_zstr.avail_in = 0;
-			_eof = true;
-		}
-	}
-	_zstr.next_out  = (unsigned char*) buffer;
-	_zstr.avail_out = static_cast<unsigned>(length);
-	for (;;)
-	{
-		int rc = deflate(&_zstr, _eof ? Z_FINISH : Z_NO_FLUSH);
-		if (_eof && rc == Z_STREAM_END)
-		{
-			_pIstr = 0;
-			return static_cast<int>(length) - _zstr.avail_out;
-		}
-		if (rc != Z_OK) throw IOException(zError(rc));
-		if (_zstr.avail_out == 0)
-		{
-			return static_cast<int>(length);
-		}
-		if (_zstr.avail_in == 0)
-		{
-			int n = 0;
-			if (_pIstr->good())
-			{
-				_pIstr->read(_buffer, DEFLATE_BUFFER_SIZE);
-				n = static_cast<int>(_pIstr->gcount());
-			}
-			if (n > 0)
-			{
-				_zstr.next_in  = (unsigned char*) _buffer;
-				_zstr.avail_in = n;
-			}
-			else
-			{
-				_zstr.next_in  = 0;
-				_zstr.avail_in = 0;
-				_eof = true;
-			}
-		}
-	}
-}
-
-
-int DeflatingStreamBuf::writeToDevice(const char* buffer, std::streamsize length)
-{
-	if (length == 0 || !_pOstr) return 0;
-
-	_zstr.next_in   = (unsigned char*) buffer;
-	_zstr.avail_in  = static_cast<unsigned>(length);
-	_zstr.next_out  = (unsigned char*) _buffer;
-	_zstr.avail_out = DEFLATE_BUFFER_SIZE;
-	for (;;)
-	{
-		int rc = deflate(&_zstr, Z_NO_FLUSH);
-		if (rc != Z_OK) throw IOException(zError(rc));
-		if (_zstr.avail_out == 0)
-		{
-			_pOstr->write(_buffer, DEFLATE_BUFFER_SIZE);
-			if (!_pOstr->good()) throw IOException("Failed writing deflated data to output stream");
-			_zstr.next_out  = (unsigned char*) _buffer;
-			_zstr.avail_out = DEFLATE_BUFFER_SIZE;
-		}
-		if (_zstr.avail_in == 0)
-		{
-			_pOstr->write(_buffer, DEFLATE_BUFFER_SIZE - _zstr.avail_out);
-			if (!_pOstr->good()) throw IOException("Failed writing deflated data to output stream");
-			_zstr.next_out  = (unsigned char*) _buffer;
-			_zstr.avail_out = DEFLATE_BUFFER_SIZE;
-			break;
-		}
-	}
-	return static_cast<int>(length);
-}
-
-
-DeflatingIOS::DeflatingIOS(std::ostream& ostr, DeflatingStreamBuf::StreamType type, int level):
-	_buf(ostr, type, level)
-{
-	poco_ios_init(&_buf);
-}
-
-
-DeflatingIOS::DeflatingIOS(std::ostream& ostr, int windowBits, int level):
-	_buf(ostr, windowBits, level)
-{
-	poco_ios_init(&_buf);
-}
-
-
-DeflatingIOS::DeflatingIOS(std::istream& istr, DeflatingStreamBuf::StreamType type, int level):
-	_buf(istr, type, level)
-{
-	poco_ios_init(&_buf);
-}
-
-
-DeflatingIOS::DeflatingIOS(std::istream& istr, int windowBits, int level):
-	_buf(istr, windowBits, level)
-{
-	poco_ios_init(&_buf);
-}
-
-
-DeflatingIOS::~DeflatingIOS()
+shigenoy::zstdstream::ZstdStreamBuf::ZstdStreamBuf(std::istream& istr)
+    : Poco::BufferedStreamBuf(ZSTD_BLOCKSIZE_MAX + 3, std::ios::in)
+    , PRE_PROCESS_BUFFER_SIZE(ZSTD_BLOCKSIZE_MAX + 3)
+    , POST_PROCESSED_BUFFER_SIZE(ZSTD_DStreamOutSize())
+    , pIstr_(&istr)
+    , dctx_(ZSTD_createDCtx())
 {
 }
 
-
-DeflatingStreamBuf* DeflatingIOS::rdbuf()
-{
-	return &_buf;
-}
-
-
-DeflatingOutputStream::DeflatingOutputStream(std::ostream& ostr, DeflatingStreamBuf::StreamType type, int level):
-	std::ostream(&_buf),
-	DeflatingIOS(ostr, type, level)
+shigenoy::zstdstream::ZstdStreamBuf::ZstdStreamBuf(std::istream& istr, int windowBits)
+    : Poco::BufferedStreamBuf(ZSTD_BLOCKSIZE_MAX + 3, std::ios::in)
+    , PRE_PROCESS_BUFFER_SIZE(ZSTD_BLOCKSIZE_MAX + 3)
+    , POST_PROCESSED_BUFFER_SIZE(ZSTD_DStreamOutSize())
+    , pIstr_(&istr)
+    , dctx_(ZSTD_createDCtx())
 {
 }
 
-
-DeflatingOutputStream::DeflatingOutputStream(std::ostream& ostr, int windowBits, int level):
-	std::ostream(&_buf),
-	DeflatingIOS(ostr, windowBits, level)
+shigenoy::zstdstream::ZstdStreamBuf::ZstdStreamBuf(std::ostream& ostr, int level)
+    : Poco::BufferedStreamBuf(ZSTD_BLOCKSIZE_MAX, std::ios::out)
+    , PRE_PROCESS_BUFFER_SIZE(ZSTD_BLOCKSIZE_MAX)
+    , POST_PROCESSED_BUFFER_SIZE(ZSTD_CStreamOutSize())
+    , pOstr_(&ostr)
+    , cctx_(ZSTD_createCCtx())
 {
 }
 
-
-DeflatingOutputStream::~DeflatingOutputStream()
+shigenoy::zstdstream::ZstdStreamBuf::ZstdStreamBuf(std::ostream& ostr, int windowBits, int level)
+    : Poco::BufferedStreamBuf(ZSTD_BLOCKSIZE_MAX, std::ios::out)
+    , PRE_PROCESS_BUFFER_SIZE(ZSTD_BLOCKSIZE_MAX)
+    , POST_PROCESSED_BUFFER_SIZE(ZSTD_CStreamOutSize())
+    , pOstr_(&ostr)
+    , cctx_(ZSTD_createCCtx())
 {
 }
 
-
-int DeflatingOutputStream::close()
+shigenoy::zstdstream::ZstdStreamBuf::~ZstdStreamBuf()
 {
-	return _buf.close();
+    try
+    {
+        close();
+    }
+    catch (...)
+    {
+    }
 }
 
-
-int DeflatingOutputStream::sync()
+int
+shigenoy::zstdstream::ZstdStreamBuf::close()
 {
-	return _buf.pubsync();
+    Poco::BufferedStreamBuf::sync();
+    pIstr_ = 0;
+    if (pOstr_)
+    {
+        //TODO impl
+        pOstr_->flush();
+        pOstr_ = 0;
+    }
+    return 0;
 }
 
+int
+shigenoy::zstdstream::ZstdStreamBuf::sync()
+{
+    if (Poco::BufferedStreamBuf::sync())
+    {
+        return -1;
+    }
 
-DeflatingInputStream::DeflatingInputStream(std::istream& istr, DeflatingStreamBuf::StreamType type, int level):
-	std::istream(&_buf),
-	DeflatingIOS(istr, type, level)
+    if (pOstr_)
+    {
+        // TODO impl
+
+        // NOTE: This breaks the Zip library and causes corruption in some files.
+        // See GH #1828
+        // _pOstr->flush();
+    }
+    return 0;
+}
+
+int
+shigenoy::zstdstream::ZstdStreamBuf::readFromDevice(char* buffer, std::streamsize length)
+{
+    if (!pIstr_)
+    {
+        return 0;
+    }
+
+    if (this->post_buffer_.size() < length)
+    {
+        this->pre_buffer_.resize(PRE_PROCESS_BUFFER_SIZE);
+        std::uninitialized_fill(this->pre_buffer_.begin(), this->pre_buffer_.end(), '\0');
+        if (size_t read =
+                this->pIstr_->readsome(this->pre_buffer_.data(), this->pre_buffer_.size());
+            read > 0)
+        {
+            ZSTD_inBuffer input = { this->pre_buffer_.data(), read, 0 };
+            std::vector<char> tmpBuf(POST_PROCESSED_BUFFER_SIZE, '\0');
+            while (input.pos < input.size)
+            {
+                ZSTD_outBuffer output = { this->post_buffer_.data(), this->post_buffer_.size(), 0 };
+                ZSTD_decompressStream(this->dctx_.get(), &output, &input);
+
+                this->post_buffer_.reserve(this->post_buffer_.size() + output.pos);
+                std::copy(tmpBuf.begin(), tmpBuf.end(), std::back_inserter(this->post_buffer_));
+                this->post_buffer_.resize(output.pos);
+                std::uninitialized_fill(tmpBuf.begin(), tmpBuf.end(), '\0');
+            }
+        }
+    }
+
+    // copy
+    const size_t actual_copy = std::min<size_t>(this->post_buffer_.size(), length);
+    std::memmove(buffer, this->post_buffer_.data(), actual_copy);
+    {
+        std::vector<char> tmp(this->post_buffer_.cbegin() + actual_copy, this->post_buffer_.cend());
+        this->post_buffer_.swap(tmp);
+    }
+    static_cast<int>(actual_copy);
+}
+
+int
+shigenoy::zstdstream::ZstdStreamBuf::writeToDevice(const char* buffer, std::streamsize length)
+{
+    if (length == 0 || !pOstr_)
+    {
+        return 0;
+    }
+    // TODO impl
+    return static_cast<int>(0);
+}
+
+shigenoy::zstdstream::ZstdIOS::ZstdIOS(std::ostream& ostr, int level): buf_(ostr, level)
+{
+    poco_ios_init(&buf_);
+}
+
+shigenoy::zstdstream::ZstdIOS::ZstdIOS(std::ostream& ostr, int windowBits, int level)
+    : buf_(ostr, windowBits, level)
+{
+    poco_ios_init(&buf_);
+}
+
+shigenoy::zstdstream::ZstdIOS::ZstdIOS(std::istream& istr): buf_(istr)
+{
+    poco_ios_init(&buf_);
+}
+
+shigenoy::zstdstream::ZstdIOS::ZstdIOS(std::istream& istr, int windowBits): buf_(istr, windowBits)
+{
+    poco_ios_init(&buf_);
+}
+
+shigenoy::zstdstream::ZstdIOS::~ZstdIOS()
 {
 }
 
+shigenoy::zstdstream::ZstdStreamBuf*
+shigenoy::zstdstream::ZstdIOS::rdbuf()
+{
+    return &buf_;
+}
 
-DeflatingInputStream::DeflatingInputStream(std::istream& istr, int windowBits, int level):
-	std::istream(&_buf),
-	DeflatingIOS(istr, windowBits, level)
+shigenoy::zstdstream::ZstdOutputStream::ZstdOutputStream(std::ostream& ostr, int level)
+    : std::ostream(&buf_), ZstdIOS(ostr, level)
 {
 }
 
-
-DeflatingInputStream::~DeflatingInputStream()
+shigenoy::zstdstream::ZstdOutputStream::ZstdOutputStream(std::ostream& ostr,
+                                                         int windowBits,
+                                                         int level)
+    : std::ostream(&buf_), ZstdIOS(ostr, windowBits, level)
 {
 }
 
+shigenoy::zstdstream::ZstdOutputStream::~ZstdOutputStream()
+{
+}
 
-} // namespace Poco
+int
+shigenoy::zstdstream::ZstdOutputStream::close()
+{
+    return buf_.close();
+}
+
+int
+shigenoy::zstdstream::ZstdOutputStream::sync()
+{
+    return buf_.pubsync();
+}
+
+shigenoy::zstdstream::ZstdInputStream::ZstdInputStream(std::istream& istr)
+    : std::istream(&buf_), ZstdIOS(istr)
+{
+}
+
+shigenoy::zstdstream::ZstdInputStream::ZstdInputStream(std::istream& istr, int windowBits)
+    : std::istream(&buf_), ZstdIOS(istr, windowBits)
+{
+}
+
+shigenoy::zstdstream::ZstdInputStream::~ZstdInputStream()
+{
+}
